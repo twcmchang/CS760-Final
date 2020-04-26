@@ -7,11 +7,12 @@ from torch.autograd import Variable
 __all__ = ['vgg']
 
 defaultcfg = {
-    11 : [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512],
-    13 : [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512],
-    16 : [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512],
-    19 : [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512],
+    11: [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512],
+    13: [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512],
+    16: [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512],
+    19: [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512],
 }
+
 
 class vgg(nn.Module):
     def __init__(self, dataset='cifar10', depth=19, init_weights=True, cfg=None):
@@ -36,9 +37,11 @@ class vgg(nn.Module):
             if v == 'M':
                 layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
             else:
-                conv2d = nn.Conv2d(in_channels, v, kernel_size=3, padding=1, bias=False)
+                conv2d = nn.Conv2d(
+                    in_channels, v, kernel_size=3, padding=1, bias=False)
                 if batch_norm:
-                    layers += [conv2d, nn.BatchNorm2d(v), nn.ReLU(inplace=True)]
+                    layers += [conv2d,
+                               nn.BatchNorm2d(v), nn.ReLU(inplace=True)]
                 else:
                     layers += [conv2d, nn.ReLU(inplace=True)]
                 in_channels = v
@@ -59,11 +62,16 @@ class vgg(nn.Module):
                 if m.bias is not None:
                     m.bias.data.zero_()
             elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(0.5)
+                # m.weight.data.fill_(0.5)
+                # monotonically decreasing initialization
+                l = len(m.weight.data)
+                init_value = torch.tensor([(l-i)/l for i in range(l)])
+                m.weight.data = init_value
                 m.bias.data.zero_()
             elif isinstance(m, nn.Linear):
                 m.weight.data.normal_(0, 0.01)
                 m.bias.data.zero_()
+
 
 if __name__ == '__main__':
     net = vgg()

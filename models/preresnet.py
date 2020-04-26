@@ -1,7 +1,9 @@
 from __future__ import absolute_import
 import math
+import torch
 import torch.nn as nn
-from .channel_selection import channel_selection
+from torch.autograd import Variable
+from channel_selection import channel_selection
 
 
 __all__ = ['resnet']
@@ -9,6 +11,7 @@ __all__ = ['resnet']
 """
 preactivation resnet with bottleneck design.
 """
+
 
 class Bottleneck(nn.Module):
     expansion = 4
@@ -50,6 +53,7 @@ class Bottleneck(nn.Module):
 
         return out
 
+
 class resnet(nn.Module):
     def __init__(self, depth=164, dataset='cifar10', cfg=None):
         super(resnet, self).__init__()
@@ -60,16 +64,19 @@ class resnet(nn.Module):
 
         if cfg is None:
             # Construct config variable.
-            cfg = [[16, 16, 16], [64, 16, 16]*(n-1), [64, 32, 32], [128, 32, 32]*(n-1), [128, 64, 64], [256, 64, 64]*(n-1), [256]]
+            cfg = [[16, 16, 16], [64, 16, 16]*(n-1), [64, 32, 32], [128, 32, 32]*(n-1), [
+                128, 64, 64], [256, 64, 64]*(n-1), [256]]
             cfg = [item for sub_list in cfg for item in sub_list]
 
         self.inplanes = 16
 
         self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1,
                                bias=False)
-        self.layer1 = self._make_layer(block, 16, n, cfg = cfg[0:3*n])
-        self.layer2 = self._make_layer(block, 32, n, cfg = cfg[3*n:6*n], stride=2)
-        self.layer3 = self._make_layer(block, 64, n, cfg = cfg[6*n:9*n], stride=2)
+        self.layer1 = self._make_layer(block, 16, n, cfg=cfg[0:3*n])
+        self.layer2 = self._make_layer(
+            block, 32, n, cfg=cfg[3*n:6*n], stride=2)
+        self.layer3 = self._make_layer(
+            block, 64, n, cfg=cfg[6*n:9*n], stride=2)
         self.bn = nn.BatchNorm2d(64 * block.expansion)
         self.select = channel_selection(64 * block.expansion)
         self.relu = nn.ReLU(inplace=True)
@@ -85,7 +92,11 @@ class resnet(nn.Module):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
                 m.weight.data.normal_(0, math.sqrt(2. / n))
             elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(0.5)
+                # m.weight.data.fill_(0.5)
+                # monotonically decreasing initialization
+                l = len(m.weight.data)
+                init_value = torch.tensor([(l-i)/l for i in range(l)])
+                m.weight.data = init_value
                 m.bias.data.zero_()
 
     def _make_layer(self, block, planes, blocks, cfg, stride=1):
@@ -97,7 +108,8 @@ class resnet(nn.Module):
             )
 
         layers = []
-        layers.append(block(self.inplanes, planes, cfg[0:3], stride, downsample))
+        layers.append(block(self.inplanes, planes,
+                            cfg[0:3], stride, downsample))
         self.inplanes = planes * block.expansion
         for i in range(1, blocks):
             layers.append(block(self.inplanes, planes, cfg[3*i: 3*(i+1)]))
@@ -119,3 +131,10 @@ class resnet(nn.Module):
         x = self.fc(x)
 
         return x
+
+
+if __name__ == '__main__':
+    net = resnet()
+    x = Variable(torch.FloatTensor(16, 3, 40, 40))
+    y = net(x)
+    print(y.data.shape)
