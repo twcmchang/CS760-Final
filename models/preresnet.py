@@ -3,7 +3,7 @@ import math
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
-from channel_selection import channel_selection
+from .channel_selection import channel_selection
 
 
 __all__ = ['resnet']
