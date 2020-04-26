@@ -154,7 +154,7 @@ def train(epoch):
         data, target = Variable(data), Variable(target)
         optimizer.zero_grad()
         output = model(data)
-        loss = F.cross_entropy(output, target)
+        loss = F.cross_entropy(output, target, reduction='sum')
         pred = output.data.max(1, keepdim=True)[1]
         loss.backward()
         if args.sr:
@@ -173,11 +173,13 @@ def test():
     for data, target in test_loader:
         if args.cuda:
             data, target = data.cuda(), target.cuda()
-        data, target = Variable(data, volatile=True), Variable(target)
+        with torch.no_grad():
+            data = Variable(data)
+            target = Variable(target)
         output = model(data)
         # sum up batch loss
         test_loss += F.cross_entropy(output, target,
-                                     size_average=False).data
+                                     reduction='sum').data
         # get the index of the max log-probability
         pred = output.data.max(1, keepdim=True)[1]
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
