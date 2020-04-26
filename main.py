@@ -177,7 +177,7 @@ def test():
         output = model(data)
         # sum up batch loss
         test_loss += F.cross_entropy(output, target,
-                                     size_average=False).data[0]
+                                     size_average=False).data
         # get the index of the max log-probability
         pred = output.data.max(1, keepdim=True)[1]
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
