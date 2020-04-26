@@ -46,7 +46,7 @@ parser.add_argument('--log-interval', type=int, default=100, metavar='N',
                     help='how many batches to wait before logging training status')
 parser.add_argument('--save', default='./logs', type=str, metavar='PATH',
                     help='path to save prune model (default: current directory)')
-parser.add_argument('--arch', default='vgg', type=str, 
+parser.add_argument('--arch', default='vgg', type=str,
                     help='architecture to use')
 parser.add_argument('--depth', default=19, type=int,
                     help='depth of the neural network')
@@ -65,41 +65,46 @@ kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 if args.dataset == 'cifar10':
     train_loader = torch.utils.data.DataLoader(
         datasets.CIFAR10('./data.cifar10', train=True, download=True,
-                       transform=transforms.Compose([
-                           transforms.Pad(4),
-                           transforms.RandomCrop(32),
-                           transforms.RandomHorizontalFlip(),
-                           transforms.ToTensor(),
-                           transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-                       ])),
+                         transform=transforms.Compose([
+                             transforms.Pad(4),
+                             transforms.RandomCrop(32),
+                             transforms.RandomHorizontalFlip(),
+                             transforms.ToTensor(),
+                             transforms.Normalize(
+                                 (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+                         ])),
         batch_size=args.batch_size, shuffle=True, **kwargs)
     test_loader = torch.utils.data.DataLoader(
         datasets.CIFAR10('./data.cifar10', train=False, transform=transforms.Compose([
-                           transforms.ToTensor(),
-                           transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-                       ])),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465),
+                                 (0.2023, 0.1994, 0.2010))
+        ])),
         batch_size=args.test_batch_size, shuffle=True, **kwargs)
 else:
     train_loader = torch.utils.data.DataLoader(
         datasets.CIFAR100('./data.cifar100', train=True, download=True,
-                       transform=transforms.Compose([
-                           transforms.Pad(4),
-                           transforms.RandomCrop(32),
-                           transforms.RandomHorizontalFlip(),
-                           transforms.ToTensor(),
-                           transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-                       ])),
+                          transform=transforms.Compose([
+                              transforms.Pad(4),
+                              transforms.RandomCrop(32),
+                              transforms.RandomHorizontalFlip(),
+                              transforms.ToTensor(),
+                              transforms.Normalize(
+                                  (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+                          ])),
         batch_size=args.batch_size, shuffle=True, **kwargs)
     test_loader = torch.utils.data.DataLoader(
         datasets.CIFAR100('./data.cifar100', train=False, transform=transforms.Compose([
-                           transforms.ToTensor(),
-                           transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-                       ])),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465),
+                                 (0.2023, 0.1994, 0.2010))
+        ])),
         batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
 if args.refine:
     checkpoint = torch.load(args.refine)
-    model = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth, cfg=checkpoint['cfg'])
+    model = models.__dict__[args.arch](
+        dataset=args.dataset, depth=args.depth, cfg=checkpoint['cfg'])
     model.load_state_dict(checkpoint['state_dict'])
 else:
     model = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth)
@@ -107,7 +112,8 @@ else:
 if args.cuda:
     model.cuda()
 
-optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+optimizer = optim.SGD(model.parameters(), lr=args.lr,
+                      momentum=args.momentum, weight_decay=args.weight_decay)
 
 if args.resume:
     if os.path.isfile(args.resume):
@@ -123,10 +129,16 @@ if args.resume:
         print("=> no checkpoint found at '{}'".format(args.resume))
 
 # additional subgradient descent on the sparsity-induced penalty term
+
+
 def updateBN():
     for m in model.modules():
         if isinstance(m, nn.BatchNorm2d):
             m.weight.grad.data.add_(args.s*torch.sign(m.weight.data))  # L1
+            # Jimmy added monotonicity-induced penalty
+            m.weight.grad.data.add_(args.m*torch.relu(torch.cat(
+                (m.weight.data[1:] - m.weight.data[:-1], torch.tensor([0.0])), dim=0)))
+
 
 def train(epoch):
     model.train()
@@ -145,7 +157,8 @@ def train(epoch):
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.1f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader), loss.data[0]))
+                100. * batch_idx / len(train_loader), loss.data))
+
 
 def test():
     model.eval()
@@ -156,8 +169,11 @@ def test():
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data, volatile=True), Variable(target)
         output = model(data)
-        test_loss += F.cross_entropy(output, target, size_average=False).data[0] # sum up batch loss
-        pred = output.data.max(1, keepdim=True)[1] # get the index of the max log-probability
+        # sum up batch loss
+        test_loss += F.cross_entropy(output, target,
+                                     size_average=False).data[0]
+        # get the index of the max log-probability
+        pred = output.data.max(1, keepdim=True)[1]
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
     test_loss /= len(test_loader.dataset)
@@ -166,10 +182,13 @@ def test():
         100. * correct / len(test_loader.dataset)))
     return correct / float(len(test_loader.dataset))
 
+
 def save_checkpoint(state, is_best, filepath):
     torch.save(state, os.path.join(filepath, 'checkpoint.pth.tar'))
     if is_best:
-        shutil.copyfile(os.path.join(filepath, 'checkpoint.pth.tar'), os.path.join(filepath, 'model_best.pth.tar'))
+        shutil.copyfile(os.path.join(filepath, 'checkpoint.pth.tar'),
+                        os.path.join(filepath, 'model_best.pth.tar'))
+
 
 best_prec1 = 0.
 for epoch in range(args.start_epoch, args.epochs):
