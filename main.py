@@ -138,8 +138,12 @@ def updateBN():
         if isinstance(m, nn.BatchNorm2d):
             m.weight.grad.data.add_(args.s*torch.sign(m.weight.data))  # L1
             # Jimmy added monotonicity-induced penalty
-            m.weight.grad.data.add_(args.m*torch.relu(torch.cat(
-                (m.weight.data[1:] - m.weight.data[:-1], torch.tensor([0.0])), dim=0)))
+            l = len(m.weight.data)
+            penalty = torch.zeros(l)
+            penalty[:-1] = torch.relu(m.weight.data[1:] - m.weight.data[:-1])
+            if args.cuda:
+                penalty = penalty.to(device='cuda')
+            m.weight.grad.data.add_(args.m*penalty)
 
 
 def train(epoch):
