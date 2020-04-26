@@ -20,6 +20,8 @@ parser.add_argument('--sparsity-regularization', '-sr', dest='sr', action='store
                     help='train with channel sparsity regularization')
 parser.add_argument('--s', type=float, default=0.0001,
                     help='scale sparse rate (default: 0.0001)')
+parser.add_argument('--m', type=float, default=2e-6,
+                    help='scale monotonicity-induced rate (default: 0.0001)')
 parser.add_argument('--refine', default='', type=str, metavar='PATH',
                     help='path to the pruned model to be fine tuned')
 parser.add_argument('--batch-size', type=int, default=64, metavar='N',
