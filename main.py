@@ -154,7 +154,7 @@ def train(epoch):
         data, target = Variable(data), Variable(target)
         optimizer.zero_grad()
         output = model(data)
-        loss = F.cross_entropy(output, target, reduction='sum')
+        loss = F.cross_entropy(output, target)
         pred = output.data.max(1, keepdim=True)[1]
         loss.backward()
         if args.sr:
