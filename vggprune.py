@@ -70,14 +70,14 @@ cfg_mask = []
 for k, m in enumerate(model.modules()):
     if isinstance(m, nn.BatchNorm2d):
         weight_copy = m.weight.data.abs().clone()
-        mask = weight_copy.gt(thre).float().cuda()
+        mask = weight_copy.gt(thre).float().to(device='cuda')
         pruned = pruned + mask.shape[0] - torch.sum(mask)
         m.weight.data.mul_(mask)
         m.bias.data.mul_(mask)
         cfg.append(int(torch.sum(mask)))
         cfg_mask.append(mask.clone())
         print('layer index: {:d} \t total channel: {:d} \t remaining channel: {:d}'.
-            format(k, mask.shape[0], int(torch.sum(mask))))
+              format(k, mask.shape[0], int(torch.sum(mask))))
     elif isinstance(m, nn.MaxPool2d):
         cfg.append('M')
 
@@ -86,6 +86,8 @@ pruned_ratio = pruned/total
 print('Pre-processing Successful!')
 
 # simple test model after Pre-processing prune (simple set BN scales to zeros)
+
+
 def test(model):
     kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
     if args.dataset == 'cifar10':
@@ -109,12 +111,14 @@ def test(model):
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data, volatile=True), Variable(target)
         output = model(data)
-        pred = output.data.max(1, keepdim=True)[1] # get the index of the max log-probability
+        # get the index of the max log-probability
+        pred = output.data.max(1, keepdim=True)[1]
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
     print('\nTest set: Accuracy: {}/{} ({:.1f}%)\n'.format(
         correct, len(test_loader.dataset), 100. * correct / len(test_loader.dataset)))
     return correct / float(len(test_loader.dataset))
+
 
 acc = test(model)
 
@@ -138,7 +142,7 @@ for [m0, m1] in zip(model.modules(), newmodel.modules()):
     if isinstance(m0, nn.BatchNorm2d):
         idx1 = np.squeeze(np.argwhere(np.asarray(end_mask.cpu().numpy())))
         if idx1.size == 1:
-            idx1 = np.resize(idx1,(1,))
+            idx1 = np.resize(idx1, (1,))
         m1.weight.data = m0.weight.data[idx1.tolist()].clone()
         m1.bias.data = m0.bias.data[idx1.tolist()].clone()
         m1.running_mean = m0.running_mean[idx1.tolist()].clone()
@@ -165,7 +169,8 @@ for [m0, m1] in zip(model.modules(), newmodel.modules()):
         m1.weight.data = m0.weight.data[:, idx0].clone()
         m1.bias.data = m0.bias.data.clone()
 
-torch.save({'cfg': cfg, 'state_dict': newmodel.state_dict()}, os.path.join(args.save, 'pruned.pth.tar'))
+torch.save({'cfg': cfg, 'state_dict': newmodel.state_dict()},
+           os.path.join(args.save, 'pruned.pth.tar'))
 
 print(newmodel)
 model = newmodel
