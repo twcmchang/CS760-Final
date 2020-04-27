@@ -63,6 +63,7 @@ for m in model.modules():
 y, i = torch.sort(bn)
 thre_index = int(total * args.percent)
 thre = y[thre_index]
+thre = thre.to(device='cuda')
 
 pruned = 0
 cfg = []
@@ -70,7 +71,7 @@ cfg_mask = []
 for k, m in enumerate(model.modules()):
     if isinstance(m, nn.BatchNorm2d):
         weight_copy = m.weight.data.abs().clone()
-        mask = weight_copy.gt(thre).float().to(device='cuda')
+        mask = weight_copy.gt(thre).float().cuda()
         pruned = pruned + mask.shape[0] - torch.sum(mask)
         m.weight.data.mul_(mask)
         m.bias.data.mul_(mask)

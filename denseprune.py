@@ -63,6 +63,7 @@ for m in model.modules():
 y, i = torch.sort(bn)
 thre_index = int(total * args.percent)
 thre = y[thre_index]
+thre = thre.to(device='cuda')
 
 pruned = 0
 cfg = []
@@ -77,7 +78,7 @@ for k, m in enumerate(model.modules()):
         cfg.append(int(torch.sum(mask)))
         cfg_mask.append(mask.clone())
         print('layer index: {:d} \t total channel: {:d} \t remaining channel: {:d}'.
-            format(k, mask.shape[0], int(torch.sum(mask))))
+              format(k, mask.shape[0], int(torch.sum(mask))))
     elif isinstance(m, nn.MaxPool2d):
         cfg.append('M')
 
@@ -86,6 +87,8 @@ pruned_ratio = pruned/total
 print('Pre-processing Successful!')
 
 # simple test model after Pre-processing prune (simple set BN scales to zeros)
+
+
 def test(model):
     kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
     if args.dataset == 'cifar10':
@@ -109,12 +112,14 @@ def test(model):
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data, volatile=True), Variable(target)
         output = model(data)
-        pred = output.data.max(1, keepdim=True)[1] # get the index of the max log-probability
+        # get the index of the max log-probability
+        pred = output.data.max(1, keepdim=True)[1]
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
     print('\nTest set: Accuracy: {}/{} ({:.1f}%)\n'.format(
         correct, len(test_loader.dataset), 100. * correct / len(test_loader.dataset)))
     return correct / float(len(test_loader.dataset))
+
 
 acc = test(model)
 
@@ -147,7 +152,7 @@ for layer_id in range(len(old_modules)):
     if isinstance(m0, nn.BatchNorm2d):
         idx1 = np.squeeze(np.argwhere(np.asarray(end_mask.cpu().numpy())))
         if idx1.size == 1:
-            idx1 = np.resize(idx1,(1,))
+            idx1 = np.resize(idx1, (1,))
 
         if isinstance(old_modules[layer_id + 1], channel_selection):
             # If the next layer is the channel selection layer, then the current batch normalization layer won't be pruned.
@@ -174,9 +179,11 @@ for layer_id in range(len(old_modules)):
             first_conv = False
             continue
         if isinstance(old_modules[layer_id - 1], channel_selection):
-            idx0 = np.squeeze(np.argwhere(np.asarray(start_mask.cpu().numpy())))
+            idx0 = np.squeeze(np.argwhere(
+                np.asarray(start_mask.cpu().numpy())))
             idx1 = np.squeeze(np.argwhere(np.asarray(end_mask.cpu().numpy())))
-            print('In shape: {:d}, Out shape {:d}.'.format(idx0.size, idx1.size))
+            print('In shape: {:d}, Out shape {:d}.'.format(
+                idx0.size, idx1.size))
             if idx0.size == 1:
                 idx0 = np.resize(idx0, (1,))
             if idx1.size == 1:
@@ -196,7 +203,8 @@ for layer_id in range(len(old_modules)):
         m1.weight.data = m0.weight.data[:, idx0].clone()
         m1.bias.data = m0.bias.data.clone()
 
-torch.save({'cfg': cfg, 'state_dict': newmodel.state_dict()}, os.path.join(args.save, 'pruned.pth.tar'))
+torch.save({'cfg': cfg, 'state_dict': newmodel.state_dict()},
+           os.path.join(args.save, 'pruned.pth.tar'))
 
 print(newmodel)
 model = newmodel
