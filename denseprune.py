@@ -6,7 +6,6 @@ import torch.nn as nn
 from torch.autograd import Variable
 from torchvision import datasets, transforms
 from models import *
-import models
 
 # Prune settings
 parser = argparse.ArgumentParser(description='PyTorch Slimming CIFAR prune')
@@ -35,10 +34,11 @@ if args.model:
     if os.path.isfile(args.model):
         checkpoint = torch.load(args.model)
         if 'cfg' not in checkpoint.keys():
+            print('not cfg')
             model = densenet(depth=args.depth, dataset=args.dataset)
         else:
-            model = models.__dict__[args.arch](
-                dataset=args.dataset, depth=args.depth, cfg=checkpoint['cfg'])
+            model = densenet(dataset=args.dataset,
+                             depth=args.depth, cfg=checkpoint['cfg'])
 
         print("=> loading checkpoint '{}'".format(args.model))
         # checkpoint = torch.load(args.model)
