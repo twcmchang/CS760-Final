@@ -30,14 +30,12 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 if not os.path.exists(args.save):
     os.makedirs(args.save)
 
-model = vgg(dataset=args.dataset, depth=args.depth)
-if args.cuda:
-    model.cuda()
-
 if args.model:
     if os.path.isfile(args.model):
         print("=> loading checkpoint '{}'".format(args.model))
         checkpoint = torch.load(args.model)
+        model = vgg(dataset=args.dataset, depth=args.depth,
+                    cfg=checkpoint['cfg'])
         args.start_epoch = checkpoint['epoch']
         best_prec1 = checkpoint['best_prec1']
         model.load_state_dict(checkpoint['state_dict'])
@@ -45,6 +43,9 @@ if args.model:
               .format(args.model, checkpoint['epoch'], best_prec1))
     else:
         print("=> no checkpoint found at '{}'".format(args.resume))
+
+if args.cuda:
+    model.cuda()
 
 print(model)
 total = 0
@@ -122,7 +123,7 @@ def test(model):
 
     print('\nTest set: Accuracy: {}/{} ({:.1f}%)\n'.format(
         correct, len(test_loader.dataset), 100. * correct / len(test_loader.dataset)))
-    return correct / float(len(test_loader.dataset))
+    return correct / len(test_loader.dataset)
 
 
 acc = test(model)
@@ -134,11 +135,6 @@ if args.cuda:
     newmodel.cuda()
 
 num_parameters = sum([param.nelement() for param in newmodel.parameters()])
-savepath = os.path.join(args.save, "prune.txt")
-with open(savepath, "w") as fp:
-    fp.write("Configuration: \n"+str(cfg)+"\n")
-    fp.write("Number of parameters: \n"+str(num_parameters)+"\n")
-    fp.write("Test accuracy: \n"+str(acc))
 
 layer_id_in_cfg = 0
 start_mask = torch.ones(3)
@@ -179,4 +175,10 @@ torch.save({'cfg': cfg, 'state_dict': newmodel.state_dict()},
 
 print(newmodel)
 model = newmodel
-test(model)
+acc = test(model)
+
+savepath = os.path.join(args.save, "prune.txt")
+with open(savepath, "w") as fp:
+    fp.write("Configuration: \n"+str(cfg)+"\n")
+    fp.write("Number of parameters: \n"+str(num_parameters)+"\n")
+    fp.write("Test accuracy: {:.4f}\n".format(acc))
