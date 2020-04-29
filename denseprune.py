@@ -6,7 +6,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 from torchvision import datasets, transforms
 from models import *
-
+import models
 
 # Prune settings
 parser = argparse.ArgumentParser(description='PyTorch Slimming CIFAR prune')
@@ -31,14 +31,17 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 if not os.path.exists(args.save):
     os.makedirs(args.save)
 
-model = densenet(depth=args.depth, dataset=args.dataset)
-
-if args.cuda:
-    model.cuda()
 if args.model:
     if os.path.isfile(args.model):
-        print("=> loading checkpoint '{}'".format(args.model))
         checkpoint = torch.load(args.model)
+        if 'cfg' not in checkpoint.keys():
+            model = densenet(depth=args.depth, dataset=args.dataset)
+        else:
+            model = models.__dict__[args.arch](
+                dataset=args.dataset, depth=args.depth, cfg=checkpoint['cfg'])
+
+        print("=> loading checkpoint '{}'".format(args.model))
+        # checkpoint = torch.load(args.model)
         args.start_epoch = checkpoint['epoch']
         best_prec1 = checkpoint['best_prec1']
         model.load_state_dict(checkpoint['state_dict'])
@@ -46,6 +49,9 @@ if args.model:
               .format(args.model, checkpoint['epoch'], best_prec1))
     else:
         print("=> no checkpoint found at '{}'".format(args.resume))
+
+if args.cuda:
+    model.cuda()
 
 total = 0
 for m in model.modules():
