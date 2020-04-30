@@ -202,12 +202,11 @@ def test():
         # get the index of the max log-probability
         pred = output.data.max(1, keepdim=True)[1]
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
-
     test_loss /= len(test_loader.dataset)
     print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.1f}%)\n'.format(
         test_loss, correct, len(test_loader.dataset),
         100. * correct / len(test_loader.dataset)))
-    return correct.data / float(len(test_loader.dataset))
+    return correct.item() / float(len(test_loader.dataset))
 
 
 def save_checkpoint(state, is_best, filepath):
