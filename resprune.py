@@ -31,14 +31,17 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 if not os.path.exists(args.save):
     os.makedirs(args.save)
 
-model = resnet(depth=args.depth, dataset=args.dataset)
-
-if args.cuda:
-    model.cuda()
 if args.model:
     if os.path.isfile(args.model):
-        print("=> loading checkpoint '{}'".format(args.model))
         checkpoint = torch.load(args.model)
+        if 'cfg' not in checkpoint.keys():
+            print('not cfg')
+            model = resnet(depth=args.depth, dataset=args.dataset)
+        else:
+            model = resnet(dataset=args.dataset,
+                           depth=args.depth, cfg=checkpoint['cfg'])
+
+        print("=> loading checkpoint '{}'".format(args.model))
         args.start_epoch = checkpoint['epoch']
         best_prec1 = checkpoint['best_prec1']
         model.load_state_dict(checkpoint['state_dict'])
@@ -47,20 +50,38 @@ if args.model:
     else:
         print("=> no checkpoint found at '{}'".format(args.resume))
 
-total = 0
+if args.cuda:
+    model.cuda()
 
-for m in model.modules():
+total = 0
+modules = list(model.modules())
+for k, m in enumerate(modules):
     if isinstance(m, nn.BatchNorm2d):
-        total += m.weight.data.shape[0]
+        if isinstance(modules[k+1], channel_selection):
+            indexes = modules[k+1].indexes.data.clone()
+            indexes = indexes.gt(0.5).float()
+            mask = np.asarray(indexes.cpu().numpy())
+            total += np.sum(mask)
+        else:
+            total += m.weight.data.shape[0]
 
 bn = torch.zeros(total)
 index = 0
-for m in model.modules():
+for k, m in enumerate(modules):
     if isinstance(m, nn.BatchNorm2d):
-        size = m.weight.data.shape[0]
-        bn[index:(index+size)] = m.weight.data.abs().clone()
+        if isinstance(modules[k+1], channel_selection):
+            indexes = modules[k+1].indexes.data.clone()
+            indexes = indexes.gt(0.5).float()
+            mask = np.asarray(indexes.cpu().numpy())
+            size = np.sum(mask)
+            idx1 = np.squeeze(np.argwhere(mask))
+            bn[index:(index+size)] = m.weight.data[idx1.tolist()].abs().clone()
+        else:
+            size = m.weight.data.shape[0]
+            bn[index:(index+size)] = m.weight.data.abs().clone()
         index += size
 
+# find the threshold
 y, i = torch.sort(bn)
 thre_index = int(total * args.percent)
 thre = y[thre_index]
@@ -70,13 +91,20 @@ thre = thre.to(device='cuda')
 pruned = 0
 cfg = []
 cfg_mask = []
-for k, m in enumerate(model.modules()):
+for k, m in enumerate(modules):
     if isinstance(m, nn.BatchNorm2d):
         weight_copy = m.weight.data.abs().clone()
+
+        if isinstance(modules[k+1], channel_selection):
+            indexes = modules[k+1].indexes.data.clone()
+            indexes = indexes.gt(0.5).float()
+            weight_copy.mul_(indexes)
+
         mask = weight_copy.gt(thre).float()
         # avoid pruning to zero channels
         if torch.sum(mask) == 0:
             mask[0] = 1.0
+
         mask = mask.cuda()
         pruned = pruned + mask.shape[0] - torch.sum(mask)
         m.weight.data.mul_(mask)
