@@ -110,24 +110,6 @@ if args.refine:
         dataset=args.dataset, depth=args.depth, cfg=cfg)
     model.load_state_dict(checkpoint['state_dict'])
 else:
-    cfg = []
-    for k, m in enumerate(model.modules()):
-        if isinstance(m, nn.BatchNorm2d):
-            weight_copy = m.weight.data.abs().clone()
-            mask = weight_copy.gt(thre).float()
-            # avoid pruning to zero channels
-            if torch.sum(mask) == 0:
-                mask[0] = 1.0
-            mask = mask.cuda()
-            pruned = pruned + mask.shape[0] - torch.sum(mask)
-            m.weight.data.mul_(mask)
-            m.bias.data.mul_(mask)
-            cfg.append(int(torch.sum(mask)))
-            cfg_mask.append(mask.clone())
-            print('layer index: {:d} \t total channel: {:d} \t remaining channel: {:d}'.
-                  format(k, mask.shape[0], int(torch.sum(mask))))
-        elif isinstance(m, nn.MaxPool2d):
-            cfg.append('M')
     model = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth)
 
 if args.cuda:
