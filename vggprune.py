@@ -34,8 +34,11 @@ if args.model:
     if os.path.isfile(args.model):
         print("=> loading checkpoint '{}'".format(args.model))
         checkpoint = torch.load(args.model)
-        model = vgg(dataset=args.dataset, depth=args.depth,
-                    cfg=checkpoint['cfg'])
+        if 'cfg' not in checkpoint.keys():
+            model = vgg(dataset=args.dataset, depth=args.depth)
+        else:
+            model = vgg(dataset=args.dataset, depth=args.depth,
+                        cfg=checkpoint['cfg'])
         args.start_epoch = checkpoint['epoch']
         best_prec1 = checkpoint['best_prec1']
         model.load_state_dict(checkpoint['state_dict'])
