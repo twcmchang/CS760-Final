@@ -124,7 +124,7 @@ def test(model):
 
     print('\nTest set: Accuracy: {}/{} ({:.1f}%)\n'.format(
         correct, len(test_loader.dataset), 100. * correct / len(test_loader.dataset)))
-    return correct / float(len(test_loader.dataset))
+    return correct.item() / float(len(test_loader.dataset))
 
 
 acc = test(model)
@@ -135,13 +135,6 @@ print(cfg)
 newmodel = resnet(depth=args.depth, dataset=args.dataset, cfg=cfg)
 if args.cuda:
     newmodel.cuda()
-
-num_parameters = sum([param.nelement() for param in newmodel.parameters()])
-savepath = os.path.join(args.save, "prune.txt")
-with open(savepath, "w") as fp:
-    fp.write("Configuration: \n"+str(cfg)+"\n")
-    fp.write("Number of parameters: \n"+str(num_parameters)+"\n")
-    fp.write("Test accuracy: \n"+str(acc))
 
 old_modules = list(model.modules())
 new_modules = list(newmodel.modules())
@@ -225,5 +218,11 @@ torch.save({'cfg': cfg, 'state_dict': newmodel.state_dict()},
            os.path.join(args.save, 'pruned.pth.tar'))
 
 print(newmodel)
-model = newmodel
-test(model)
+acc = test(newmodel)
+
+num_parameters = sum([param.nelement() for param in newmodel.parameters()])
+savepath = os.path.join(args.save, "prune.txt")
+with open(savepath, "w") as fp:
+    fp.write("Configuration: \n"+str(cfg)+"\n")
+    fp.write("Number of parameters: \n"+str(num_parameters)+"\n")
+    fp.write("Test accuracy: \n"+str(acc))

@@ -123,7 +123,7 @@ def test(model):
 
     print('\nTest set: Accuracy: {}/{} ({:.1f}%)\n'.format(
         correct, len(test_loader.dataset), 100. * correct / len(test_loader.dataset)))
-    return correct / len(test_loader.dataset)
+    return correct.item() / len(test_loader.dataset)
 
 
 acc = test(model)
@@ -133,8 +133,6 @@ print(cfg)
 newmodel = vgg(dataset=args.dataset, cfg=cfg)
 if args.cuda:
     newmodel.cuda()
-
-num_parameters = sum([param.nelement() for param in newmodel.parameters()])
 
 layer_id_in_cfg = 0
 start_mask = torch.ones(3)
@@ -174,8 +172,9 @@ torch.save({'cfg': cfg, 'state_dict': newmodel.state_dict()},
            os.path.join(args.save, 'pruned.pth.tar'))
 
 print(newmodel)
-model = newmodel
-acc = test(model)
+acc = test(newmodel)
+
+num_parameters = sum([param.nelement() for param in newmodel.parameters()])
 
 savepath = os.path.join(args.save, "prune.txt")
 with open(savepath, "w") as fp:
