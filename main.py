@@ -209,7 +209,7 @@ for epoch in range(args.start_epoch, args.epochs):
     prec1 = test()
     is_best = prec1 > best_prec1
     best_prec1 = max(prec1, best_prec1)
-    if cfg is not None:
+    if args.refine: # record cfg
         save_checkpoint({
             'cfg': cfg,
             'epoch': epoch + 1,
