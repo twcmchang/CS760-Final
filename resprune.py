@@ -86,31 +86,50 @@ thre = y[thre_index]
 print("threshold=", thre.item())
 thre = thre.to(device='cuda')
 
-
 pruned = 0
 cfg = []
 cfg_mask = []
 for k, m in enumerate(modules):
     if isinstance(m, nn.BatchNorm2d):
         weight_copy = m.weight.data.abs().clone()
+        selected_weight = weight_copy
 
         if isinstance(modules[k+1], channel_selection):
+            # tmp weight_copy
             indexes = modules[k+1].indexes.data.clone()
             weight_copy.mul_(indexes)
 
-        mask = weight_copy.gt(thre).float()
+            # acutal weight
+            idx = np.squeeze(np.argwhere(indexes.cpu()))
+            selected_weight = selected_weight[idx]
+            if selected_weight.dim() == 0:
+                selected_weight = torch.reshape(selected_weight, (1,))
+
+        # tmp mask
+        tmp_mask = weight_copy.gt(thre).float()
+
         # avoid pruning to zero channels
+        if torch.sum(tmp_mask) == 0:
+            tmp_mask[torch.argmax(weight_copy)] = 1.0
+        tmp_mask = tmp_mask.cuda()
+
+        # tmp mask
+        if isinstance(modules[k+1], channel_selection):
+            pruned = pruned + torch.sum(indexes) - torch.sum(tmp_mask)
+        else:
+            pruned = pruned + mask.shape[0] - torch.sum(tmp_mask)
+        m.weight.data.mul_(tmp_mask)
+        m.bias.data.mul_(tmp_mask)
+
+        mask = selected_weight.gt(thre).float()
         if torch.sum(mask) == 0:
-            mask[torch.argmax(weight_copy)] = 1.0
-        mask = mask.cuda()
-        pruned = pruned + mask.shape[0] - torch.sum(mask)
-        m.weight.data.mul_(mask)
-        m.bias.data.mul_(mask)
+            mask[torch.argmax(selected_weight)] = 1.0
+
         cfg.append(int(torch.sum(mask)))
         cfg_mask.append(mask.clone())
         if isinstance(modules[k+1], channel_selection):
-            print('layer index: {:d} \t total channel: {:d}/{:d} \t remaining channel: {:d}'.
-                  format(k, int(torch.sum(indexes)), mask.shape[0], int(torch.sum(mask))))
+            print('layer index: {:d} \t total channel: {:d}/{:d} \t remaining channel: {:d} {:d}'.
+                  format(k, int(torch.sum(indexes)), mask.shape[0], int(torch.sum(mask)), np.argmax(mask)))
         else:
             print('layer index: {:d} \t total channel: {:d} \t remaining channel: {:d}'.
                   format(k, mask.shape[0], int(torch.sum(mask))))
@@ -118,10 +137,7 @@ for k, m in enumerate(modules):
         cfg.append('M')
 
 pruned_ratio = pruned/total
-
 print('Pre-processing Successful!')
-
-# simple test model after Pre-processing prune (simple set BN scales to zeros)
 
 
 def test(model):
@@ -198,18 +214,15 @@ for layer_id in range(len(old_modules)):
             m1.running_mean = m0.running_mean[idx1.tolist()].clone()
             m1.running_var = m0.running_var[idx1.tolist()].clone()
 
-        print(layer_id, "BN: ", m1.weight.data.shape)
-        print(idx0)
-        print(idx1)
         layer_id_in_cfg += 1
         start_mask = end_mask.clone()
         if layer_id_in_cfg < len(cfg_mask):  # do not change in Final FC
             end_mask = cfg_mask[layer_id_in_cfg]
+
     elif isinstance(m0, nn.Conv2d):
         if conv_count == 0:
             m1.weight.data = m0.weight.data.clone()
             conv_count += 1
-            print(layer_id, "Conv1: ", m1.weight.shape)
             continue
         if isinstance(old_modules[layer_id-1], channel_selection) or isinstance(old_modules[layer_id-1], nn.BatchNorm2d):
             # This convers the convolutions in the residual block.
@@ -222,21 +235,17 @@ for layer_id in range(len(old_modules)):
                 idx0 = np.resize(idx0, (1,))
             if idx1.size == 1:
                 idx1 = np.resize(idx1, (1,))
-            print("idx0: ", idx0)
             w1 = m0.weight.data[:, idx0.tolist(), :, :].clone()
             # If the current convolution is not the last convolution in the residual block, then we can change the
             # number of output channels. Currently we use `conv_count` to detect whether it is such convolution.
             if conv_count % 3 != 1:
                 w1 = w1[idx1.tolist(), :, :, :].clone()
-                print("idx1: ", idx1)
             m1.weight.data = w1.clone()
-            print(layer_id, "Conv2: ", m1.weight.shape)
             continue
 
         # We need to consider the case where there are downsampling convolutions.
         # For these convolutions, we just copy the weights.
         m1.weight.data = m0.weight.data.clone()
-        print(layer_id, "Conv3: ", m1.weight.shape)
     elif isinstance(m0, nn.Linear):
         idx0 = np.squeeze(np.argwhere(np.asarray(start_mask.cpu().numpy())))
         if idx0.size == 1:
