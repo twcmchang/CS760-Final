@@ -199,6 +199,8 @@ def save_checkpoint(state, is_best, filepath):
 
 
 best_prec1 = 0.
+accu_list = []
+best_epoch = 0
 for epoch in range(args.start_epoch, args.epochs):
     if epoch in [args.epochs*0.5, args.epochs*0.75]:
         for param_group in optimizer.param_groups:
@@ -223,4 +225,10 @@ for epoch in range(args.start_epoch, args.epochs):
             'optimizer': optimizer.state_dict(),
         }, is_best, filepath=args.save)
 
+    if is_best:
+        best_epoch = epoch
+    accu_list.append(prec1)
+accu_list = accu_list[max(0, best_epoch-10):min(best_epoch+10, args.epochs)]
+print("accu dist (at best): {:.4f}, {:.4f}".format(
+    np.mean(accu_list), np.std(accu_list)))
 print("Best accuracy: "+str(best_prec1))
