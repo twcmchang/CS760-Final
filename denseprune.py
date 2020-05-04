@@ -54,20 +54,33 @@ if args.cuda:
     model.cuda()
 
 total = 0
-for m in model.modules():
+modules = list(model.modules())
+for k, m in enumerate(modules):
     if isinstance(m, nn.BatchNorm2d):
-        total += m.weight.data.shape[0]
+        if isinstance(modules[k+1], channel_selection):
+            indexes = modules[k+1].indexes.data.clone()
+            mask = np.asarray(indexes.cpu().numpy())
+            total += int(np.sum(mask))
+        else:
+            total += m.weight.data.shape[0]
 
 bn = torch.zeros(total)
 index = 0
-for m in model.modules():
+for k, m in enumerate(modules):
     if isinstance(m, nn.BatchNorm2d):
-        size = m.weight.data.shape[0]
-        bn[index:(index+size)] = m.weight.data.abs().clone()
+        if isinstance(modules[k+1], channel_selection):
+            indexes = modules[k+1].indexes.data.clone()
+            mask = np.asarray(indexes.cpu().numpy())
+            size = int(np.sum(mask))
+            idx1 = np.squeeze(np.argwhere(mask))
+            bn[index:(index+size)] = m.weight.data[idx1.tolist()].abs().clone()
+        else:
+            size = m.weight.data.shape[0]
+            bn[index:(index+size)] = m.weight.data.abs().clone()
         index += size
 
 y, i = torch.sort(bn)
-thre_index = int(total * args.percent)
+thre_index = int(total * args_percent)
 thre = y[thre_index]
 thre = thre.to(device='cuda')
 
@@ -77,26 +90,49 @@ cfg_mask = []
 for k, m in enumerate(model.modules()):
     if isinstance(m, nn.BatchNorm2d):
         weight_copy = m.weight.data.abs().clone()
-        mask = weight_copy.gt(thre).float()
+        selected_weight = weight_copy
+
+        if isinstance(modules[k+1], channel_selection):
+            indexes = modules[k+1].indexes.data.clone()
+            weight_copy.mul_(indexes)
+
+            idx = np.squeeze(np.argwhere(indexes.cpu()))
+            selected_weight = selected_weight[idx]
+            if selected_weight.dim() == 0:
+                selected_weight = torch.reshape(selected_weight, (1,))
+
+        tmp_mask = weight_copy.gt(thre).float()
         # avoid pruning to zero channels
+        if torch.sum(tmp_mask) == 0:
+            tmp_mask[torch.argmax(weight_copy)] = 1.0
+        tmp_mask = tmp_mask.cuda()
+
+        if isinstance(modules[k+1], channel_selection):
+            pruned = pruned + torch.sum(indexes) - torch.sum(tmp_mask)
+        else:
+            pruned = pruned + mask.shape[0] - torch.sum(tmp_mask)
+        m.weight.data.mul_(tmp_mask)
+        m.bias.data.mul_(tmp_mask)
+
+        mask = selected_weight.gt(thre).float()
+        print(mask)
         if torch.sum(mask) == 0:
-            mask[0] = 1.0
-        mask = mask.cuda()
-        pruned = pruned + mask.shape[0] - torch.sum(mask)
-        m.weight.data.mul_(mask)
-        m.bias.data.mul_(mask)
+            mask[torch.argmax(selected_weight)] = 1.0
+        print(mask)
+
         cfg.append(int(torch.sum(mask)))
         cfg_mask.append(mask.clone())
-        print('layer index: {:d} \t total channel: {:d} \t remaining channel: {:d}'.
-              format(k, mask.shape[0], int(torch.sum(mask))))
+        if isinstance(modules[k+1], channel_selection):
+            print('layer index: {:d} \t total channel: {:d}/{:d} \t remaining channel: {:d} {:d}'.
+                  format(k, int(torch.sum(indexes)), mask.shape[0], int(torch.sum(mask)), np.argmax(mask)))
+        else:
+            print('layer index: {:d} \t total channel: {:d} \t remaining channel: {:d}'.
+                  format(k, mask.shape[0], int(torch.sum(mask))))
     elif isinstance(m, nn.MaxPool2d):
         cfg.append('M')
 
 pruned_ratio = pruned/total
-
 print('Pre-processing Successful!')
-
-# simple test model after Pre-processing prune (simple set BN scales to zeros)
 
 
 def test(model):
@@ -130,8 +166,6 @@ def test(model):
         correct, len(test_loader.dataset), 100. * correct / len(test_loader.dataset)))
     return correct.item() / float(len(test_loader.dataset))
 
-
-acc = test(model)
 
 print("Cfg:")
 print(cfg)
