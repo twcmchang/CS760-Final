@@ -92,7 +92,7 @@ for m in model.modules():
 y, i = torch.sort(bn)
 
 original_model = model
-percent = np.concatenate((np.arange(0.05, 0.7, 0.05), np.arange(0.7, 0.8, 0.01), np.arange(0.8, 1,0.05)))
+percent = np.arange(0.02, 1, 0.02)
 
 for perc in percent:
     model = original_model
