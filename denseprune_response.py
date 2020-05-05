@@ -67,7 +67,6 @@ def test(model):
     for data, target in test_loader:
         if args.cuda:
             data, target = data.cuda(), target.cuda()
-        with torch.no_grad():
         data, target = Variable(data, volatile=True), Variable(target)
         output = model(data)
         # get the index of the max log-probability
