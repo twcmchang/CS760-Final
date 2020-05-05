@@ -129,7 +129,7 @@ for k, m in enumerate(modules):
         cfg_mask.append(mask.clone())
         if isinstance(modules[k+1], channel_selection):
             print('layer index: {:d} \t total channel: {:d}/{:d} \t remaining channel: {:d} {:d}'.
-                  format(k, int(torch.sum(indexes)), mask.shape[0], int(torch.sum(mask)), np.argmax(mask)))
+                  format(k, int(torch.sum(indexes)), mask.shape[0], int(torch.sum(mask)), torch.argmax(mask)))
         else:
             print('layer index: {:d} \t total channel: {:d} \t remaining channel: {:d}'.
                   format(k, mask.shape[0], int(torch.sum(mask))))
