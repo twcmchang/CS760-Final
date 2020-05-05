@@ -112,9 +112,6 @@ if args.refine:
 else:
     model = models.__dict__[args.arch](dataset=args.dataset, depth=args.depth)
 
-if args.cuda:
-    model.cuda()
-
 optimizer = optim.SGD(model.parameters(), lr=args.lr,
                       momentum=args.momentum, weight_decay=args.weight_decay)
 
@@ -138,6 +135,8 @@ if args.resume:
     else:
         print("=> no checkpoint found at '{}'".format(args.resume))
 
+if args.cuda:
+    model.cuda()
 # additional subgradient descent on the sparsity-induced penalty term
 
 
