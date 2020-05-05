@@ -122,6 +122,13 @@ if args.resume:
     if os.path.isfile(args.resume):
         print("=> loading checkpoint '{}'".format(args.resume))
         checkpoint = torch.load(args.resume)
+        if 'cfg' in checkpoint.keys():
+            cfg = checkpoint['cfg']
+            model = models.__dict__[args.arch](
+                dataset=args.dataset, depth=args.depth, cfg=cfg)
+        else:
+            model = models.__dict__[args.arch](
+                dataset=args.dataset, depth=args.depth)
         args.start_epoch = checkpoint['epoch']
         best_prec1 = checkpoint['best_prec1']
         model.load_state_dict(checkpoint['state_dict'])
@@ -209,7 +216,7 @@ for epoch in range(args.start_epoch, args.epochs):
     prec1 = test()
     is_best = prec1 > best_prec1
     best_prec1 = max(prec1, best_prec1)
-    if args.refine: # record cfg
+    if args.refine:  # record cfg
         save_checkpoint({
             'cfg': cfg,
             'epoch': epoch + 1,
