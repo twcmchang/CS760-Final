@@ -53,6 +53,39 @@ if args.model:
 if args.cuda:
     model.cuda()
 
+
+def test(model):
+    kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
+    if args.dataset == 'cifar10':
+        test_loader = torch.utils.data.DataLoader(
+            datasets.CIFAR10('./data.cifar10', train=False, transform=transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])),
+            batch_size=args.test_batch_size, shuffle=False, **kwargs)
+    elif args.dataset == 'cifar100':
+        test_loader = torch.utils.data.DataLoader(
+            datasets.CIFAR100('./data.cifar100', train=False, transform=transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])),
+            batch_size=args.test_batch_size, shuffle=False, **kwargs)
+    else:
+        raise ValueError("No valid dataset is given.")
+    model.eval()
+    correct = 0
+    for data, target in test_loader:
+        if args.cuda:
+            data, target = data.cuda(), target.cuda()
+        data, target = Variable(data, volatile=True), Variable(target)
+        output = model(data)
+        # get the index of the max log-probability
+        pred = output.data.max(1, keepdim=True)[1]
+        correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+
+    print('\nTest set: Accuracy: {}/{} ({:.1f}%)\n'.format(
+        correct, len(test_loader.dataset), 100. * correct / len(test_loader.dataset)))
+    return correct.item() / float(len(test_loader.dataset))
+
+
 total = 0
 modules = list(model.modules())
 for k, m in enumerate(modules):
@@ -80,9 +113,11 @@ for k, m in enumerate(modules):
         index += size
 
 y, i = torch.sort(bn)
-thre_index = int(total * args_percent)
+thre_index = int(total * args.percent)
 thre = y[thre_index]
 thre = thre.to(device='cuda')
+
+print(total, "="*20, thre)
 
 pruned = 0
 cfg = []
@@ -115,16 +150,19 @@ for k, m in enumerate(model.modules()):
         m.bias.data.mul_(tmp_mask)
 
         mask = selected_weight.gt(thre).float()
-        print(mask)
         if torch.sum(mask) == 0:
             mask[torch.argmax(selected_weight)] = 1.0
-        print(mask)
+        
+        if isinstance(modules[k+1], channel_selection):
+            cfg.append(int(torch.sum(mask)))
+            cfg_mask.append(mask.clone())
+        else:
+            cfg.append(int(torch.sum(tmp_mask)))
+            cfg_mask.append(tmp_mask.clone())
 
-        cfg.append(int(torch.sum(mask)))
-        cfg_mask.append(mask.clone())
         if isinstance(modules[k+1], channel_selection):
             print('layer index: {:d} \t total channel: {:d}/{:d} \t remaining channel: {:d} {:d}'.
-                  format(k, int(torch.sum(indexes)), mask.shape[0], int(torch.sum(mask)), np.argmax(mask)))
+                  format(k, int(torch.sum(indexes)), mask.shape[0], int(torch.sum(mask)), torch.argmax(mask)))
         else:
             print('layer index: {:d} \t total channel: {:d} \t remaining channel: {:d}'.
                   format(k, mask.shape[0], int(torch.sum(mask))))
@@ -134,37 +172,8 @@ for k, m in enumerate(model.modules()):
 pruned_ratio = pruned/total
 print('Pre-processing Successful!')
 
-
-def test(model):
-    kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
-    if args.dataset == 'cifar10':
-        test_loader = torch.utils.data.DataLoader(
-            datasets.CIFAR10('./data.cifar10', train=False, transform=transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])),
-            batch_size=args.test_batch_size, shuffle=False, **kwargs)
-    elif args.dataset == 'cifar100':
-        test_loader = torch.utils.data.DataLoader(
-            datasets.CIFAR100('./data.cifar100', train=False, transform=transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])),
-            batch_size=args.test_batch_size, shuffle=False, **kwargs)
-    else:
-        raise ValueError("No valid dataset is given.")
-    model.eval()
-    correct = 0
-    for data, target in test_loader:
-        if args.cuda:
-            data, target = data.cuda(), target.cuda()
-        data, target = Variable(data, volatile=True), Variable(target)
-        output = model(data)
-        # get the index of the max log-probability
-        pred = output.data.max(1, keepdim=True)[1]
-        correct += pred.eq(target.data.view_as(pred)).cpu().sum()
-
-    print('\nTest set: Accuracy: {}/{} ({:.1f}%)\n'.format(
-        correct, len(test_loader.dataset), 100. * correct / len(test_loader.dataset)))
-    return correct.item() / float(len(test_loader.dataset))
+acc = test(model)
+print(acc)
 
 
 print("Cfg:")
@@ -252,3 +261,4 @@ with open(savepath, "w") as fp:
     fp.write("Configuration: \n"+str(cfg)+"\n")
     fp.write("Number of parameters: \n"+str(num_parameters)+"\n")
     fp.write("Test accuracy: \n"+str(acc))
+
